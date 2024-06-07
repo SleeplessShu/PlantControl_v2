@@ -1,0 +1,209 @@
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <WebServer.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include "time.h"
+
+
+const char* ntpServer = "pool.ntp.org";
+const long gmtOffset_sec = 0;
+const int daylightOffset_sec = 3600;
+
+// Define OLED display width and height
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define SCREEN_ADDRESS 0x3C
+#define I2C_SDA 5
+#define I2C_SCL 4
+
+// Create an instance of the SSD1306 display
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+
+// WiFi credentials
+const char* ssid = "BEST_DOG_EVER";
+const char* password = "89091531200";
+
+// Server details
+WiFiServer server(443); // HTTPS server on port 443
+
+const char* server_cert = \
+"-----BEGIN CERTIFICATE-----\n" \
+"MIIDjzCCAnegAwIBAgIUJlQ1YhJurx5mZY8qjuJk4FYTHyAwDQYJKoZIhvcNAQEL\n" \
+"BQAwcDELMAkGA1UEBhMCQU0xEDAOBgNVBAgMB1llcmV2YW4xEDAOBgNVBAcMB0tl\n" \
+"bnRyb24xFTATBgNVBAMMDFNsZWVwbGVzc0RvZzEmMCQGCSqGSIb3DQEJARYXZGku\n" \
+"YnVybWlzdHJvdkBnbWFpbC5jb20wHhcNMjQwNjA3MTE1MzAzWhcNMjUwNjA3MTE1\n" \
+"MzAzWjBwMQswCQYDVQQGEwJBTTEQMA4GA1UECAwHWWVyZXZhbjEQMA4GA1UEBwwH\n" \
+"S2VudHJvbjEVMBMGA1UEAwwMU2xlZXBsZXNzRG9nMSYwJAYJKoZIhvcNAQkBFhdk\n" \
+"aS5idXJtaXN0cm92QGdtYWlsLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC\n" \
+"AQoCggEBANspZVEgfArxDEXI2fyozOe8hfdd4X3B4y0ZCGLfyJaPVT1LeNjCVFRA\n" \
+"wuo7M1vLMzh/OknMH3hchkwDbnYwAGbkSSrUGTHGBooQ6WEh08iIa78niLpLMWn+\n" \
+"NV81+hZvaQYucSg2J6w6v1pGYIvAotWERt6vPDMCG8Mg7fMc6KOX339V0d/EncYe\n" \
+"61bcMH6jPpq+wKS5ft0bhXGW5UB8Ps9drwbTQDDTKHuGScqXzEWD3TB2lGAOJZTP\n" \
+"CidKoWJ6x+mlv7kBdocWukepN3D6d+HMlujG41abDCrnYj865B4qLuss/y+NqBQ8\n" \
+"WFmP8Z0HiM5BmhfxT1QLM+buXZNkzIsCAwEAAaMhMB8wHQYDVR0OBBYEFMU/A6gY\n" \
+"YC8SHsjCxIiwztLzgIw5MA0GCSqGSIb3DQEBCwUAA4IBAQB6IZ9JWxOnTPW46csA\n" \
+"KDSHfpBr7c9ssbXwl6+CQPoHg7ox/WRMaE0JaSmghX/Lw05oNawyYkkl1wNwoggb\n" \
+"4j9SH3M28uGvoC8R6jfA6LGEwmG5rpPPdYkaWRPOwhmp5buAcejb8okUPkUC+MaM\n" \
+"Z7vTVtJrW5bc46yCjLGwKeI1UXdHhggsBZR98+C2peNKeKL+Q2R+1EHUp+99egBp\n" \
+"ZtI4+Kgom7tOWBzqbMGtif3riATx8em93Ukl+fDmmg4zEPgviFYPlJzph6slAwv0\n" \
+"A9lwmQz3nmeQAf75nIc5EL3CREt3v6+Z+mYluYvEeQlY50pAFqUsQMEpIYho5/f2\n" \
+"dLJJ\n" \
+"-----END CERTIFICATE-----\n";
+
+const char* server_key = \
+"-----BEGIN ENCRYPTED PRIVATE KEY-----\n" \
+"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\n" \
+"-----END ENCRYPTED PRIVATE KEY-----\n";
+
+void setup() {
+    Serial.begin(115200);
+    Serial.println("START");
+    Wire.begin(I2C_SDA, I2C_SCL);
+
+    // Initialize display
+    if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+        Serial.println(F("SSD1306 allocation failed"));
+        for (;;);
+    }
+
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.println(F("Initializing..."));
+    display.display();
+    delay(1000);
+
+    // Connect to WiFi
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.println(F("Connecting to WiFi..."));
+    display.display();
+    Serial.println("Connecting to WiFi...");
+    WiFi.begin(ssid, password);
+
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+        display.print(F("."));
+        display.display();
+    }
+
+    Serial.println("WiFi connected.");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.println(F("WiFi connected"));
+    display.print(F("IP: "));
+    display.println(WiFi.localIP());
+    display.display();
+    delay(500);
+
+ // Synchronize time using NTP
+    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+    Serial.println("Waiting for NTP time sync");
+    while (!time(nullptr)) {
+        Serial.print(".");
+        delay(1000);
+    }
+    Serial.println("\nTime synchronized");
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.println(F("Time synchronized"));
+    display.display();
+    delay(5000);
+
+    server.begin();
+    Serial.println("HTTPS server started");
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.println(F("HTTPS server started"));
+    display.setCursor(1, 0);
+    display.println(WiFi.localIP());
+    delay(500);
+}
+
+int counter = 0;
+void loop() {
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.println(F("WiFi connected"));
+    display.print(F("IP: "));
+    display.println(WiFi.localIP());
+    display.println(F("counter"));
+    display.println(counter);
+    display.display();
+    delay(500);
+
+    counter++;
+
+    WiFiClient client = server.available(); // Listen for incoming clients
+
+    if (client) { // If a new client connects,
+        Serial.println("New Client connected");
+        WiFiClientSecure secureClient;
+        secureClient.setCACert(server_cert);
+        secureClient.setPrivateKey(server_key);
+
+        if (secureClient.connect(client.remoteIP(), client.remotePort())) {
+            String currentLine = ""; // make a String to hold incoming data from the client
+            while (secureClient.connected()) { // loop while the client's connected
+                if (secureClient.available()) { // if there's bytes to read from the client,
+                    char c = secureClient.read(); // read a byte, then
+                    Serial.write(c); // print it out the serial monitor
+                    if (c == '\n') { // if the byte is a newline character
+                        if (currentLine.length() == 0) {
+                            secureClient.println("HTTP/1.1 200 OK");
+                            secureClient.println("Content-type:text/html");
+                            secureClient.println();
+                            secureClient.println("<!DOCTYPE HTML><html>");
+                            secureClient.println("<p>Hello from ESP32 via HTTPS</p>");
+                            secureClient.println("</html>");
+                            secureClient.println();
+                            break;
+                        } else {
+                            currentLine = "";
+                        }
+                    } else if (c != '\r') {
+                        currentLine += c;
+                    }
+                }
+            }
+            secureClient.stop();
+            Serial.println("Client Disconnected.");
+        } else {
+            Serial.println("Failed to establish secure connection");
+        }
+    }
+}
